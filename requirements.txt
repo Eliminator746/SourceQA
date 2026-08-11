@@ -33,3 +33,17 @@ boto3
 # File validation
 # =========================
 python-magic
+
+
+pytest
+httpx
+
+
+# =========================
+# RAG
+# =========================
+langchain-core
+langchain-text-splitters
+langchain-community
+python-docx
+pypdf

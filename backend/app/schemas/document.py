@@ -21,3 +21,10 @@ class DocumentListResponse(BaseModel):
     documents: list[DocumentResponse]
     count: int
     max_sources: int = 5
+
+
+class DocumentUploadResponse(BaseModel):
+    message: str
+    document_id: UUID
+    filename: str
+    status: str

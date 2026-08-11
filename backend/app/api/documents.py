@@ -21,7 +21,7 @@ from app.schemas.document import (
     DocumentListResponse,
     DocumentUploadResponse,
 )
-from app.services.s3_service import s3_upload
+from app.services.s3_service import delete_s3_object, s3_upload
 
 
 router = APIRouter(
@@ -235,7 +235,7 @@ def get_document(
 
 @router.delete(
     "/{document_id}",
-    status_code=status.HTTP_204_NO_CONTENT
+    status_code=status.HTTP_200_OK
 )
 def delete_document(
     document_id: uuid.UUID,
@@ -258,10 +258,20 @@ def delete_document(
             detail="Document not found"
         )
 
-    # We will delete the S3 object here.
-    # Chroma deletion will also be added later.
+    # Delete file from S3
+    try:
 
+        delete_s3_object(document.s3_key)
+
+    except Exception:
+
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to delete document from storage"
+        )
+
+    # Delete metadata from PostgreSQL
     db.delete(document)
     db.commit()
 
-    return None
+    return {"message": "Document {document_id} - Deleted successfully"}

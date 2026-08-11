@@ -3,7 +3,9 @@ from fastapi import FastAPI
 from app.api.auth import router as auth_router
 from app.api.documents import router as documents_router
 from app.api.query import router as query_router
+from app.core.database import Base, engine
 
+Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
     title="RAG Q&A API",
