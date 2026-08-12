@@ -25,6 +25,22 @@ def s3_upload(
     )
 
 
+def get_s3_object(
+    key: str,
+) -> bytes:
+    """
+    Download a private S3 object and return its contents as bytes.
+    """
+
+    response = s3_client.get_object(
+        Bucket=settings.AWS_BUCKET,
+        Key=key,
+    )
+
+    return response["Body"].read()
+
+
+
 def delete_s3_object(key: str) -> None:
 
     s3_client.delete_object(

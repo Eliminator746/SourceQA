@@ -45,5 +45,11 @@ httpx
 langchain-core
 langchain-text-splitters
 langchain-community
-python-docx
+langchain-chroma
+chromadb
+sentence-transformers
+rank-bm25
 pypdf
+python-docx
+langchain
+langchain-google-genai

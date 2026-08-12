@@ -1,0 +1,125 @@
+from pathlib import Path
+
+from dotenv import load_dotenv
+from langchain.agents import create_agent
+from langchain.tools import tool
+from langchain_google_genai import ChatGoogleGenerativeAI
+
+from app.rag.retrieval import retrieve
+
+
+MODEL = "gemini-3.6-flash"
+
+env_path = Path(__file__).resolve().parents[3] / ".env"
+load_dotenv(env_path)
+
+model = ChatGoogleGenerativeAI( model=MODEL )
+
+
+def create_rag_agent(
+    documents,
+    user_id: str
+):
+
+    @tool
+    def search_documents(
+        question: str
+    ) -> str:
+        """
+        Search the user's uploaded documents and return
+        the most relevant information for the question.
+        """
+
+        results = retrieve(
+            question=question,
+            documents=documents,
+            user_id=user_id,
+            semantic_k=20,
+            bm25_k=20,
+            rerank_k=5
+        )
+
+        if not results:
+            return "NO_RELEVANT_INFORMATION"
+
+        context = []
+
+        for document in results:
+
+            metadata = document.metadata
+
+            source = metadata.get(
+                "filename",
+                "Unknown source"
+            )
+
+            page = metadata.get("page")
+
+            if page is not None:
+                source = f"{source}, page {page + 1}"
+
+            context.append(
+                f"Source: {source}\n"
+                f"Content: {document.page_content}"
+            )
+
+        return "\n\n".join(context)
+
+    agent = create_agent(
+        model=model,
+        tools=[search_documents],
+        system_prompt="""
+You are a document question-answering assistant.
+
+Your job is to answer questions ONLY using information
+returned by the search_documents tool.
+
+Rules:
+
+1. Always use the search_documents tool for questions
+   about the user's uploaded documents.
+
+2. Do not use your general knowledge to answer.
+
+3. If the tool returns NO_RELEVANT_INFORMATION,
+   say exactly:
+   "I don't have the answer based on the provided documents."
+
+4. Do not invent or assume information.
+
+5. Keep the answer concise and within 6 sentences.
+
+6. Mention the source when answering.
+
+7. If the retrieved information does not sufficiently
+   answer the question, say that you don't have enough
+   information rather than guessing.
+"""
+    )
+
+    return agent
+
+
+def ask_agent(
+    question: str,
+    documents,
+    user_id: str
+):
+
+    agent = create_rag_agent(
+        documents=documents,
+        user_id=user_id
+    )
+
+    result = agent.invoke(
+        {
+            "messages": [
+                {
+                    "role": "user",
+                    "content": question
+                }
+            ]
+        }
+    )
+
+    return result["messages"][-1].content

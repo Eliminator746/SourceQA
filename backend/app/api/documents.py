@@ -22,6 +22,9 @@ from app.schemas.document import (
     DocumentUploadResponse,
 )
 from app.services.s3_service import delete_s3_object, s3_upload
+from app.services.rag_ingestion import (
+    ingest_document_from_s3,
+)
 
 
 router = APIRouter(
@@ -126,9 +129,9 @@ async def upload_document(
         f"{document_id}.{extension}"
     )
 
-    # -------------------------
-    # Upload to S3
-    # -------------------------
+    # -----------------------------------------
+    # Upload original file to S3
+    # -----------------------------------------
 
     try:
 
@@ -144,9 +147,10 @@ async def upload_document(
             detail="Failed to upload document"
         )
 
-    # -------------------------
-    # Save DB record
-    # -------------------------
+
+    # -----------------------------------------
+    # Save DB metadata
+    # -----------------------------------------
 
     new_document = Document(
         id=document_id,
@@ -155,20 +159,45 @@ async def upload_document(
         file_type=extension,
         file_size=file_size,
         s3_key=document_key,
-        status="processing"
+        status="processing",
     )
 
     db.add(new_document)
     db.commit()
     db.refresh(new_document)
 
+
+    # -----------------------------------------
+    # S3 → RAG ingestion
+    # -----------------------------------------
+
+    try:
+
+        ingest_document_from_s3(
+            document=new_document,
+            db=db,
+        )
+
+    except Exception:
+
+        return {
+            "message": "Document uploaded, but ingestion failed",
+            "document_id": new_document.id,
+            "filename": new_document.filename,
+            "status": new_document.status,
+        }
+
+
+    # -----------------------------------------
+    # Final response
+    # -----------------------------------------
+
     return {
-        "message": "Document uploaded successfully",
+        "message": "Document uploaded and indexed successfully",
         "document_id": new_document.id,
         "filename": new_document.filename,
-        "status": new_document.status
+        "status": new_document.status,
     }
-
 
 # =========================
 # Get all documents

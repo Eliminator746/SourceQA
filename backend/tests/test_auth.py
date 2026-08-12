@@ -1,9 +1,14 @@
+import uuid
+
+
 def test_register_user(client):
+
+    email = f"newuser_{uuid.uuid4()}@example.com"
 
     response = client.post(
         "/api/auth/register",
         json={
-            "email": "newuser@example.com",
+            "email": email,
             "password": "Password123!"
         }
     )
@@ -12,7 +17,7 @@ def test_register_user(client):
 
     data = response.json()
 
-    assert data["email"] == "newuser@example.com"
+    assert data["email"] == email
     assert "id" in data
     assert "created_at" in data
 
@@ -23,29 +28,18 @@ def test_register_user(client):
 
 def test_duplicate_registration(client):
 
-    payload = {
-        "email": "duplicate@example.com",
-        "password": "Password123!"
-    }
+    email = f"duplicate_{uuid.uuid4()}@example.com"
+    payload = {"email": email, "password": "Password123!"}
 
-    first_response = client.post(
-        "/api/auth/register",
-        json=payload
-    )
+    first_response = client.post("/api/auth/register", json=payload)
 
     assert first_response.status_code == 201
 
-    second_response = client.post(
-        "/api/auth/register",
-        json=payload
-    )
+    second_response = client.post("/api/auth/register", json=payload)
 
     assert second_response.status_code == 409
 
-    assert (
-        second_response.json()["detail"]
-        == "Email already registered"
-    )
+    assert second_response.json()["detail"] == "Email already registered"
     
 def test_login(client, test_user):
 
