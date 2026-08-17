@@ -3,10 +3,10 @@ export interface QueryRequest {
 }
 
 export interface Source {
-  document_id: string;
   filename: string;
-  page: number | null;
-  chunk_index: number | null;
+  page?: number;
+  page_label?: string;
+  chunk_index?: number;
 }
 
 export interface QueryResponse {
