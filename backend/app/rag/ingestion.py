@@ -10,7 +10,7 @@ from langchain_core.documents import Document
 env_path = Path(__file__).resolve().parents[3] / ".env"
 load_dotenv(env_path)
 
-embeddings = GoogleGenerativeAIEmbeddings(model="gemini-embedding-2-preview")
+embeddings = GoogleGenerativeAIEmbeddings(model="gemini-embedding-2")
 
 
 vector_store = Chroma(
@@ -98,6 +98,39 @@ def ingest_documents(
 
     return chunks
 
+
+def get_user_chunks(user_id: str) -> list[Document]:
+    """
+    Load all indexed chunks belonging to a user from Chroma.
+
+    Used by the evaluation pipeline to reconstruct the evaluation
+    corpus before running BM25 + semantic retrieval.
+    """
+
+    result = vector_store.get(
+        where={
+            "user_id": user_id
+        },
+        include=[
+            "documents",
+            "metadatas",
+        ],
+    )
+
+    documents = []
+
+    for page_content, metadata in zip(
+        result.get("documents", []),
+        result.get("metadatas", []),
+    ):
+        documents.append(
+            Document(
+                page_content=page_content,
+                metadata=metadata or {},
+            )
+        )
+
+    return documents
 
 
 

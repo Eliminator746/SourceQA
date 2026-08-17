@@ -77,7 +77,7 @@ def build_citations(
 
         elif metadata.get("page") is not None:
 
-            raw_page = metadata["page"]
+            raw_page = metadata["page"] # PyPDFLoader only automatically adds: metadata['pages']
 
             try:
                 page = int(raw_page) + 1

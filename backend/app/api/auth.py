@@ -130,3 +130,18 @@ def get_me(
 ):
 
     return current_user
+
+
+# =========================
+# All user
+# =========================
+
+@router.get(
+    "/users",
+    response_model=list[UserResponse]
+)
+def get_all_users(
+    db: Session = Depends(get_db)
+):
+    users = db.query(User).all()
+    return users

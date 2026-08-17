@@ -53,3 +53,7 @@ pypdf
 python-docx
 langchain
 langchain-google-genai
+
+langsmith
+openevals
+openai

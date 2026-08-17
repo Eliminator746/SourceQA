@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Any
 
 from dotenv import load_dotenv
 from langchain.agents import create_agent
@@ -8,22 +9,45 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from app.rag.retrieval import retrieve
 
 
-MODEL = "gemini-3.6-flash"
+# ============================================================
+# Environment
+# ============================================================
 
 env_path = Path(__file__).resolve().parents[3] / ".env"
 load_dotenv(env_path)
 
-model = ChatGoogleGenerativeAI( model=MODEL )
 
+# ============================================================
+# Model
+# ============================================================
+
+MODEL = "gemini-3.6-flash"
+
+model = ChatGoogleGenerativeAI(
+    model=MODEL
+)
+
+
+# ============================================================
+# RAG Agent
+# ============================================================
 
 def create_rag_agent(
     documents,
-    user_id: str
+    user_id: str,
+    retrieved_results: list,
 ):
+    """
+    Create the document QA agent.
+
+    `retrieved_results` is a mutable list shared with the
+    search tool so that the evaluation layer can inspect the
+    actual evidence retrieved during the agent execution.
+    """
 
     @tool
     def search_documents(
-        question: str
+        question: str,
     ) -> str:
         """
         Search the user's uploaded documents and return
@@ -36,21 +60,41 @@ def create_rag_agent(
             user_id=user_id,
             semantic_k=20,
             bm25_k=20,
-            rerank_k=5
+            rerank_k=5,
         )
 
         if not results:
             return "NO_RELEVANT_INFORMATION"
 
+        # ----------------------------------------------------
+        # Capture the actual retrieval results
+        # ----------------------------------------------------
+        #
+        # retrieve() currently returns:
+        #
+        # [
+        #     (Document, relevance_score),
+        #     ...
+        # ]
+        #
+        # We keep those objects for LangSmith evaluation.
+        #
+
+        retrieved_results.extend(results)
+
+        # ----------------------------------------------------
+        # Build context for the agent
+        # ----------------------------------------------------
+
         context = []
 
-        for document in results:
+        for document, score in results:
 
-            metadata = document.metadata
+            metadata = document.metadata or {}
 
             source = metadata.get(
                 "filename",
-                "Unknown source"
+                "Unknown source",
             )
 
             page = metadata.get("page")
@@ -64,6 +108,10 @@ def create_rag_agent(
             )
 
         return "\n\n".join(context)
+
+    # ========================================================
+    # Agent
+    # ========================================================
 
     agent = create_agent(
         model=model,
@@ -94,32 +142,137 @@ Rules:
 7. If the retrieved information does not sufficiently
    answer the question, say that you don't have enough
    information rather than guessing.
-"""
+""",
     )
 
     return agent
 
 
-def ask_agent(
+# ============================================================
+# Agent with evaluation trace
+# ============================================================
+
+def ask_agent_with_trace(
     question: str,
     documents,
-    user_id: str
-):
+    user_id: str,
+) -> dict[str, Any]:
+    """
+    Run the RAG agent and expose the retrieval results.
+
+    This function is primarily useful for LangSmith evaluation.
+
+    Returns:
+
+        {
+            "answer": str,
+            "retrieved_results": [
+                (Document, relevance_score),
+                ...
+            ]
+        }
+
+    The retrieved results are the actual results produced by
+    the hybrid retrieval + RRF + CrossEncoder pipeline.
+    """
+
+    # --------------------------------------------------------
+    # Shared list used by the search tool
+    # --------------------------------------------------------
+
+    retrieved_results = []
+
+    # --------------------------------------------------------
+    # Create agent
+    # --------------------------------------------------------
 
     agent = create_rag_agent(
         documents=documents,
-        user_id=user_id
+        user_id=user_id,
+        retrieved_results=retrieved_results,
     )
+
+    # --------------------------------------------------------
+    # Run agent
+    # --------------------------------------------------------
 
     result = agent.invoke(
         {
             "messages": [
                 {
                     "role": "user",
-                    "content": question
+                    "content": question,
                 }
             ]
         }
     )
 
-    return result["messages"][-1].content
+    # --------------------------------------------------------
+    # Extract final answer
+    # --------------------------------------------------------
+
+    answer = result["messages"][-1].content
+
+    # --------------------------------------------------------
+    # Remove duplicate chunks if the agent searched more
+    # than once during the same question.
+    # --------------------------------------------------------
+
+    unique_results = []
+    seen = set()
+
+    for document, score in retrieved_results:
+
+        metadata = document.metadata or {}
+
+        key = (
+            metadata.get("document_id"),
+            metadata.get("chunk_index"),
+        )
+
+        # If metadata doesn't contain enough information to
+        # identify the chunk, fall back to its content.
+        if key == (None, None):
+            key = document.page_content
+
+        if key in seen:
+            continue
+
+        seen.add(key)
+
+        unique_results.append(
+            (document, score)
+        )
+
+    return {
+        "answer": answer,
+        "retrieved_results": unique_results,
+    }
+
+
+# ============================================================
+# Normal production interface
+# ============================================================
+
+def ask_agent(
+    question: str,
+    documents,
+    user_id: str,
+) -> str:
+    """
+    Normal production-facing agent function.
+
+    Keeps the original contract:
+
+        question + documents + user_id
+                    ↓
+                 string
+    """
+
+    result = ask_agent_with_trace(
+        question=question,
+        documents=documents,
+        user_id=user_id,
+    )
+
+    return result["answer"]
