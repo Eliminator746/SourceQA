@@ -3,6 +3,28 @@ from app.rag.agent import ask_agent_with_trace
 
 from evaluation.config import EVAL_USER_ID
 
+def extract_answer_text(answer) -> str:
+    """
+    Normalize LangChain/Gemini content into a plain string.
+    """
+
+    if isinstance(answer, str):
+        return answer
+
+    if isinstance(answer, list):
+        text_parts = []
+
+        for block in answer:
+            if isinstance(block, dict):
+                text = block.get("text")
+
+                if text:
+                    text_parts.append(text)
+
+        if text_parts:
+            return "\n".join(text_parts)
+
+    return str(answer)
 
 def target(inputs: dict) -> dict:
 
@@ -28,9 +50,13 @@ def target(inputs: dict) -> dict:
         documents=documents,
         user_id=EVAL_USER_ID,
     )
+    
+    answer = extract_answer_text(
+        result["answer"]
+    )
 
     return {
-    "answer": result["answer"],
+    "answer": answer,
     "retrieved_documents": [
         {
             "page_content": document.page_content,
