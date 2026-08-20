@@ -7,6 +7,7 @@ from langchain.tools import tool
 from langchain_google_genai import ChatGoogleGenerativeAI
 
 from app.rag.retrieval import retrieve
+from app.rag.evidence import check_retrieval_evidence
 
 
 # ============================================================
@@ -29,6 +30,13 @@ model = ChatGoogleGenerativeAI(
 
 
 # ============================================================
+# Evidence Gate Configuration
+# ============================================================
+
+EVIDENCE_THRESHOLD = 0.30
+
+
+# ============================================================
 # RAG Agent
 # ============================================================
 
@@ -40,9 +48,21 @@ def create_rag_agent(
     """
     Create the document QA agent.
 
-    `retrieved_results` is a mutable list shared with the
-    search tool so that the evaluation layer can inspect the
-    actual evidence retrieved during the agent execution.
+    Retrieval happens through the search_documents tool.
+
+    Flow:
+
+        Question
+            ↓
+        Hybrid Retrieval
+            ↓
+        RRF
+            ↓
+        CrossEncoder Reranking
+            ↓
+        Evidence Gate
+            ↓
+        Agent receives evidence only if the gate passes
     """
 
     @tool
@@ -51,8 +71,12 @@ def create_rag_agent(
     ) -> str:
         """
         Search the user's uploaded documents and return
-        the most relevant information for the question.
+        sufficiently relevant evidence for the question.
         """
+
+        # ----------------------------------------------------
+        # 1. Retrieve + rerank
+        # ----------------------------------------------------
 
         results = retrieve(
             question=question,
@@ -67,29 +91,38 @@ def create_rag_agent(
             return "NO_RELEVANT_INFORMATION"
 
         # ----------------------------------------------------
-        # Capture the actual retrieval results
+        # 3. Evidence Gate
         # ----------------------------------------------------
+
+        evidence = check_retrieval_evidence(
+            ranked_results=results,
+            threshold=EVIDENCE_THRESHOLD,
+        )
+
+        # ----------------------------------------------------
+        # 4. Capture actual retrieval results
         #
-        # retrieve() currently returns:
-        #
-        # [
-        #     (Document, relevance_score),
-        #     ...
-        # ]
-        #
-        # We keep those objects for LangSmith evaluation.
-        #
+        # IMPORTANT:
+        # We capture the results even when the gate fails.
+        # This is useful for LangSmith evaluation/debugging.
+        # ----------------------------------------------------
 
         retrieved_results.extend(results)
 
         # ----------------------------------------------------
-        # Build context for the agent
+        # 5. Evidence Gate FAILED
+        # ----------------------------------------------------
+
+        if not evidence.sufficient:
+            return "NO_RELEVANT_INFORMATION"
+
+        # ----------------------------------------------------
+        # 6. Build context from accepted evidence
         # ----------------------------------------------------
 
         context = []
 
-        for document, score in results:
-
+        for document, score in evidence.documents:
             metadata = document.metadata or {}
 
             source = metadata.get(
@@ -159,8 +192,6 @@ def ask_agent_with_trace(
 ) -> dict[str, Any]:
     """
     Run the RAG agent and expose the retrieval results.
-
-    This function is primarily useful for LangSmith evaluation.
 
     Returns:
 

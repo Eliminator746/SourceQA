@@ -25,7 +25,7 @@ def load_pdf(
 
         loader = PyPDFLoader(temp_path)
 
-        documents = loader.load()
+        documents = loader.load() # creates one Document per page
 
         for document in documents:
             document.metadata.update({

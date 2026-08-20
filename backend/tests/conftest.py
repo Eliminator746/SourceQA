@@ -10,6 +10,7 @@ from app.rag.ingestion import ingest_documents
 from app.rag.loaders import load_document
 from types import SimpleNamespace
 from app.models.user import User as UserModel
+from app.models.document import Document
 import app.core.database as _app_db
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -210,3 +211,28 @@ def db_session(tmp_path):
         # restore original engine/session if needed
         _db.engine = AppEngine
         _db.SessionLocal = AppSessionLocal
+
+
+@pytest.fixture
+def test_document(db_session):
+    user = UserModel(
+        email=f"document_{uuid.uuid4()}@example.com",
+        password_hash="test-password-hash",
+    )
+    db_session.add(user)
+    db_session.commit()
+    db_session.refresh(user)
+
+    document = Document(
+        user_id=user.id,
+        filename="test.pdf",
+        file_type="pdf",
+        file_size=1,
+        s3_key=f"documents/{user.id}/test.pdf",
+        status="processing",
+    )
+    db_session.add(document)
+    db_session.commit()
+    db_session.refresh(document)
+
+    return document

@@ -4,6 +4,7 @@ import magic
 
 from fastapi import (
     APIRouter,
+    BackgroundTasks,
     Depends,
     File,
     HTTPException,
@@ -12,7 +13,7 @@ from fastapi import (
 )
 from sqlalchemy.orm import Session
 
-from app.core.database import get_db
+from app.core.database import SessionLocal, get_db
 from app.core.security import get_current_user
 from app.models.document import Document
 from app.models.user import User
@@ -44,6 +45,24 @@ SUPPORTED_FILE_TYPES = {
 }
 
 
+def ingest_uploaded_document(document_id: uuid.UUID) -> None:
+    db = SessionLocal()
+
+    try:
+        document = (
+            db.query(Document)
+            .filter(Document.id == document_id)
+            .first()
+        )
+
+        if document:
+            ingest_document_from_s3(document=document, db=db)
+    except Exception:
+        pass
+    finally:
+        db.close()
+
+
 # =========================
 # Upload document
 # =========================
@@ -54,6 +73,7 @@ SUPPORTED_FILE_TYPES = {
     status_code=status.HTTP_201_CREATED
 )
 async def upload_document(
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
@@ -171,29 +191,13 @@ async def upload_document(
     # S3 → RAG ingestion
     # -----------------------------------------
 
-    try:
-
-        ingest_document_from_s3(
-            document=new_document,
-            db=db,
-        )
-
-    except Exception:
-
-        return {
-            "message": "Document uploaded, but ingestion failed",
-            "document_id": new_document.id,
-            "filename": new_document.filename,
-            "status": new_document.status,
-        }
-
-
-    # -----------------------------------------
-    # Final response
-    # -----------------------------------------
+    background_tasks.add_task(
+        ingest_uploaded_document,
+        new_document.id,
+    )
 
     return {
-        "message": "Document uploaded and indexed successfully",
+        "message": "Document uploaded and is being indexed",
         "document_id": new_document.id,
         "filename": new_document.filename,
         "status": new_document.status,

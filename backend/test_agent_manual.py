@@ -11,56 +11,61 @@ DOCUMENT_ID = "test-document-001"
 USER_ID = "test-user-001"
 
 
-# --------------------------------
-# Read PDF
-# --------------------------------
+def main() -> None:
+    # --------------------------------
+    # Read PDF
+    # --------------------------------
 
-with open(PDF_PATH, "rb") as file:
-    contents = file.read()
-
-
-# --------------------------------
-# Load document
-# --------------------------------
-
-documents = load_document(
-    contents=contents,
-    file_type="pdf",
-    document_id=DOCUMENT_ID,
-    user_id=USER_ID,
-    filename=PDF_PATH.name
-)
-
-print(f"Loaded documents: {len(documents)}")
+    with open(PDF_PATH, "rb") as file:
+        contents = file.read()
 
 
-# --------------------------------
-# Chunk + Embed + Chroma
-# --------------------------------
+    # --------------------------------
+    # Load document
+    # --------------------------------
 
-chunks = ingest_documents(
-    documents
-)
+    documents = load_document(
+        contents=contents,
+        file_type="pdf",
+        document_id=DOCUMENT_ID,
+        user_id=USER_ID,
+        filename=PDF_PATH.name
+    )
 
-print(f"Created chunks: {len(chunks)}")
-
-
-# --------------------------------
-# Ask Agent
-# --------------------------------
-
-question = "Which companies in the report experienced strong stock-price growth despite relatively weak or declining fundamentals, and what does the report say about the risks of this situation?"
+    print(f"Loaded documents: {len(documents)}")
 
 
-answer = ask_agent(
-    question=question,
-    documents=chunks,
-    user_id=USER_ID
-)
+    # --------------------------------
+    # Chunk + Embed + Chroma
+    # --------------------------------
+
+    chunks = ingest_documents(
+        documents
+    )
+
+    print(f"Created chunks: {len(chunks)}")
 
 
-print("\nQuestion:")
-print(question)
+    # --------------------------------
+    # Ask Agent
+    # --------------------------------
 
-print("\nAnswer:")
-print(answer)
+    question = "Which companies in the report experienced strong stock-price growth despite relatively weak or declining fundamentals, and what does the report say about the risks of this situation?"
+
+
+    answer = ask_agent(
+        question=question,
+        documents=chunks,
+        user_id=USER_ID
+    )
+
+
+    print("\nQuestion:")
+    print(question)
+
+    print("\nAnswer:")
+    print(answer)
+
+
+if __name__ == "__main__":
+    main()

@@ -28,7 +28,7 @@ def create_retriever(
 
     bm25_retriever = BM25Retriever.from_documents(
         documents
-    )
+    )   # returns a BM25Retriever object.
 
     bm25_retriever.k = bm25_k
 
@@ -37,11 +37,11 @@ def create_retriever(
             semantic_retriever,
             bm25_retriever
         ],
-        weights=[0.5, 0.5],
+        weights=[0.5, 0.5], # The weights=[0.5, 0.5] says you're giving the two retrievers equal weight.
         c=60
-    )
+    )   # RRF technique
 
-    return hybrid_retriever
+    return hybrid_retriever # will return you retrieved Document chunks at invoke
 
 
 # ---------------------------------------------------------
