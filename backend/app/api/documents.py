@@ -26,6 +26,7 @@ from app.services.s3_service import delete_s3_object, s3_upload
 from app.services.rag_ingestion import (
     ingest_document_from_s3,
 )
+from app.rag.ingestion import delete_document_chunks
 
 
 router = APIRouter(
@@ -303,8 +304,11 @@ def delete_document(
             detail="Failed to delete document from storage"
         )
 
+    # Delete vectors from ChromaDB
+    delete_document_chunks(str(document.id))
+
     # Delete metadata from PostgreSQL
     db.delete(document)
     db.commit()
 
-    return {"message": "Document {document_id} - Deleted successfully"}
+    return {"message": f"Document {document_id} - Deleted successfully"}

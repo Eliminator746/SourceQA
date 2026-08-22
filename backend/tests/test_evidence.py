@@ -1,9 +1,15 @@
+import pytest
 from langchain_core.documents import Document
 
-from app.rag.evidence import (
-    check_evidence,
-    check_retrieval_evidence,
-)
+from app.rag.evidence import check_retrieval_evidence
+
+
+# ---------------------------------------------------------
+# Helper
+# ---------------------------------------------------------
+
+def _ranked(documents, scores):
+    return list(zip(documents, scores))
 
 
 # ---------------------------------------------------------
@@ -12,30 +18,25 @@ from app.rag.evidence import (
 
 def test_evidence_gate_accepts_strong_evidence():
 
-    documents = [
-        Document(
-            page_content=(
-                "Tesla's stock price increased "
-                "approximately 63% in 2024."
-            ),
-            metadata={
-                "filename": "Stock_Market_Performance_2024.pdf",
-                "page": 8,
-            },
-        )
-    ]
+    document = Document(
+        page_content=(
+            "Tesla's stock price increased "
+            "approximately 63% in 2024."
+        ),
+        metadata={
+            "filename": "Stock_Market_Performance_2024.pdf",
+            "page": 8,
+        },
+    )
 
-    scores = [0.85]
-
-    result = check_evidence(
-        documents=documents,
-        scores=scores,
+    result = check_retrieval_evidence(
+        ranked_results=[(document, 0.85)],
         threshold=0.30,
     )
 
     assert result.sufficient is True
     assert result.best_score == 0.85
-    assert len(result.documents) == 1
+    assert len(result.ranked_results) == 1
 
 
 # ---------------------------------------------------------
@@ -44,30 +45,25 @@ def test_evidence_gate_accepts_strong_evidence():
 
 def test_evidence_gate_rejects_weak_evidence():
 
-    documents = [
-        Document(
-            page_content=(
-                "The company reported moderate "
-                "growth during the year."
-            ),
-            metadata={
-                "filename": "Stock_Market_Performance_2024.pdf",
-                "page": 15,
-            },
-        )
-    ]
+    document = Document(
+        page_content=(
+            "The company reported moderate "
+            "growth during the year."
+        ),
+        metadata={
+            "filename": "Stock_Market_Performance_2024.pdf",
+            "page": 15,
+        },
+    )
 
-    scores = [0.12]
-
-    result = check_evidence(
-        documents=documents,
-        scores=scores,
+    result = check_retrieval_evidence(
+        ranked_results=[(document, 0.12)],
         threshold=0.30,
     )
 
     assert result.sufficient is False
     assert result.best_score == 0.12
-    assert result.documents == []
+    assert result.ranked_results == []
 
 
 # ---------------------------------------------------------
@@ -76,19 +72,18 @@ def test_evidence_gate_rejects_weak_evidence():
 
 def test_evidence_gate_rejects_no_documents():
 
-    result = check_evidence(
-        documents=[],
-        scores=[],
+    result = check_retrieval_evidence(
+        ranked_results=[],
         threshold=0.30,
     )
 
     assert result.sufficient is False
-    assert result.documents == []
+    assert result.ranked_results == []
     assert result.best_score is None
 
 
 # ---------------------------------------------------------
-# 4. Multiple documents
+# 4. Multiple documents — best score determines acceptance
 # ---------------------------------------------------------
 
 def test_evidence_gate_uses_best_score():
@@ -99,22 +94,14 @@ def test_evidence_gate_uses_best_score():
         Document(page_content="Strong evidence"),
     ]
 
-    scores = [
-        0.12,
-        0.42,
-        0.81,
-    ]
-
-    result = check_evidence(
-        documents=documents,
-        scores=scores,
+    result = check_retrieval_evidence(
+        ranked_results=_ranked(documents, [0.12, 0.42, 0.81]),
         threshold=0.30,
     )
 
     assert result.sufficient is True
     assert result.best_score == 0.81
-
-    assert len(result.documents) == 3
+    assert len(result.ranked_results) == 3
 
 
 # ---------------------------------------------------------
@@ -129,21 +116,14 @@ def test_evidence_gate_rejects_when_all_scores_are_low():
         Document(page_content="Evidence 3"),
     ]
 
-    scores = [
-        0.10,
-        0.18,
-        0.25,
-    ]
-
-    result = check_evidence(
-        documents=documents,
-        scores=scores,
+    result = check_retrieval_evidence(
+        ranked_results=_ranked(documents, [0.10, 0.18, 0.25]),
         threshold=0.30,
     )
 
     assert result.sufficient is False
     assert result.best_score == 0.25
-    assert result.documents == []
+    assert result.ranked_results == []
 
 
 # ---------------------------------------------------------
@@ -152,17 +132,12 @@ def test_evidence_gate_rejects_when_all_scores_are_low():
 
 def test_evidence_gate_accepts_exact_threshold():
 
-    documents = [
-        Document(
-            page_content="Evidence exactly at threshold"
-        )
-    ]
+    document = Document(
+        page_content="Evidence exactly at threshold"
+    )
 
-    scores = [0.30]
-
-    result = check_evidence(
-        documents=documents,
-        scores=scores,
+    result = check_retrieval_evidence(
+        ranked_results=[(document, 0.30)],
         threshold=0.30,
     )
 
@@ -171,52 +146,27 @@ def test_evidence_gate_accepts_exact_threshold():
 
 
 # ---------------------------------------------------------
-# 7. Mismatched documents and scores
+# 7. Non-Document object raises TypeError
 # ---------------------------------------------------------
 
-def test_evidence_gate_rejects_mismatched_scores():
+def test_evidence_gate_rejects_non_document():
 
-    documents = [
-        Document(page_content="Evidence 1"),
-        Document(page_content="Evidence 2"),
-    ]
-
-    scores = [0.80]
-
-    try:
-        check_evidence(
-            documents=documents,
-            scores=scores,
+    with pytest.raises(TypeError):
+        check_retrieval_evidence(
+            ranked_results=[("not a document", 0.80)],
             threshold=0.30,
         )
 
-        assert False, (
-            "Expected ValueError for mismatched "
-            "documents and scores"
-        )
-
-    except ValueError as exc:
-
-        assert (
-            str(exc)
-            == "Number of documents must match "
-               "number of scores."
-        )
-
 
 # ---------------------------------------------------------
-# 8. Test the retrieval-result convenience function
+# 8. check_retrieval_evidence with ranked_results tuple form
 # ---------------------------------------------------------
 
 def test_check_retrieval_evidence():
 
     documents = [
-        Document(
-            page_content="Tesla stock increased strongly."
-        ),
-        Document(
-            page_content="Tesla earnings declined."
-        ),
+        Document(page_content="Tesla stock increased strongly."),
+        Document(page_content="Tesla earnings declined."),
     ]
 
     ranked_results = [
@@ -231,4 +181,4 @@ def test_check_retrieval_evidence():
 
     assert result.sufficient is True
     assert result.best_score == 0.87
-    assert len(result.documents) == 2
+    assert len(result.ranked_results) == 2

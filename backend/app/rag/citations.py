@@ -1,16 +1,18 @@
-# app/rag/citations.py
-
 from dataclasses import dataclass
-from uuid import UUID
+from typing import Any
 
 
-@dataclass(frozen=True)
+# ============================================================
+# Citation
+# ============================================================
+
+@dataclass(frozen=True, slots=True)
 class Citation:
     """
-    Citation generated from retrieved Document metadata.
+    Source attribution for evidence retrieved from a document.
 
-    This class intentionally contains only information
-    that is useful to the frontend for source attribution.
+    This object contains only metadata required by the frontend
+    to identify the source of an answer.
     """
 
     document_id: str
@@ -19,18 +21,73 @@ class Citation:
     chunk_index: int | None = None
 
 
+# ============================================================
+# Metadata helpers
+# ============================================================
+
+def _normalize_page(metadata: dict[str, Any]) -> int | None:
+    """
+    Normalize document page metadata to a 1-based integer.
+
+    PyPDFLoader commonly stores `page` as a zero-based integer.
+
+    Example:
+
+        page = 0  ->  page = 1
+        page = 1  ->  page = 2
+
+    If a valid numeric page cannot be determined, return None.
+    """
+
+    raw_page = metadata.get("page")
+
+    if raw_page is None:
+        return None
+
+    try:
+        return int(raw_page) + 1
+    except (TypeError, ValueError):
+        return None
+
+
+def _normalize_chunk_index(
+    metadata: dict[str, Any],
+) -> int | None:
+    """
+    Normalize chunk_index to an integer.
+    """
+
+    raw_chunk_index = metadata.get("chunk_index")
+
+    if raw_chunk_index is None:
+        return None
+
+    try:
+        return int(raw_chunk_index)
+    except (TypeError, ValueError):
+        return None
+
+
+# ============================================================
+# Citation builder
+# ============================================================
+
 def build_citations(
     ranked_results: list[tuple],
     max_citations: int = 3,
 ) -> list[Citation]:
     """
-    Build deterministic citations from reranked Documents.
+    Build deterministic citations from retrieved evidence.
 
     Parameters
     ----------
     ranked_results:
-        List of:
-            (Document, relevance_score)
+        Reranked/evidence-gated results in the form:
+
+            [
+                (Document, relevance_score),
+                ...
+            ]
 
     max_citations:
         Maximum number of unique citations returned.
@@ -38,92 +95,80 @@ def build_citations(
     Returns
     -------
     list[Citation]
+
+    Notes
+    -----
+    Citations are generated from document metadata rather than
+    from the LLM response.
+
+    Results are assumed to already be ordered by relevance.
     """
 
     if not ranked_results:
         return []
 
+    if max_citations <= 0:
+        return []
+
     citations: list[Citation] = []
-    seen: set[tuple] = set()
+
+    # Used to avoid returning the same source repeatedly.
+    seen: set[tuple[str, int | None]] = set()
 
     for document, _score in ranked_results:
 
         metadata = document.metadata or {}
 
+        # ----------------------------------------------------
+        # Required metadata
+        # ----------------------------------------------------
+
         document_id = metadata.get("document_id")
         filename = metadata.get("filename")
 
-        # A retrieved chunk without these fields cannot
-        # be safely cited.
+        # A chunk without these fields cannot be safely cited.
         if not document_id or not filename:
             continue
 
-        # -------------------------------------------------
-        # Page handling
-        # -------------------------------------------------
+        document_id = str(document_id)
+        filename = str(filename)
+
+        # ----------------------------------------------------
+        # Page
+        # ----------------------------------------------------
+
+        page = _normalize_page(metadata)
+
+        # ----------------------------------------------------
+        # Chunk
+        # ----------------------------------------------------
+
+        chunk_index = _normalize_chunk_index(metadata)
+
+        # ----------------------------------------------------
+        # Deduplication
+        # ----------------------------------------------------
         #
-        # PyPDFLoader commonly stores page as 0-based.
-        # Frontend users expect page numbers starting from 1.
+        # If multiple chunks from the same page are retrieved:
         #
-        # If page_label exists, prefer it.
-        # Otherwise convert numeric page to 1-based.
-        # -------------------------------------------------
-
-        page = None
-
-        if metadata.get("page_label") is not None:
-
-            page = metadata["page_label"]
-
-        elif metadata.get("page") is not None:
-
-            raw_page = metadata["page"] # PyPDFLoader only automatically adds: metadata['pages']
-
-            try:
-                page = int(raw_page) + 1
-            except (TypeError, ValueError):
-                page = None
-
-        # -------------------------------------------------
-        # Chunk index
-        # -------------------------------------------------
-
-        chunk_index = metadata.get(
-            "chunk_index"
-        )
-
-        if chunk_index is not None:
-
-            try:
-                chunk_index = int(chunk_index)
-
-            except (TypeError, ValueError):
-                chunk_index = None
-
-        # -------------------------------------------------
-        # Deduplicate citations
-        # -------------------------------------------------
+        #   chunk 3 -> page 2
+        #   chunk 4 -> page 2
         #
-        # Multiple chunks from the same document/page
-        # should normally produce one citation.
+        # return one citation:
         #
-        # For TXT/DOCX without pages, document_id alone
+        #   document.pdf, page 2
+        #
+        # For documents without page metadata:
+        #
+        #   document_id + None
+        #
         # becomes the deduplication key.
-        # -------------------------------------------------
+        # ----------------------------------------------------
 
-        if page is not None:
-
-            citation_key = (
-                str(document_id),
-                page,
-            )
-
-        else:
-
-            citation_key = (
-                str(document_id),
-                None,
-            )
+        citation_key = (
+            document_id,
+            page,
+        )
 
         if citation_key in seen:
             continue
@@ -132,8 +177,8 @@ def build_citations(
 
         citations.append(
             Citation(
-                document_id=str(document_id),
-                filename=str(filename),
+                document_id=document_id,
+                filename=filename,
                 page=page,
                 chunk_index=chunk_index,
             )

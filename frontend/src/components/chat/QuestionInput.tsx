@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useState, type ChangeEvent } from "react";
 
 interface QuestionInputProps {
-  onAsk: (question: string) => Promise<unknown>;
+  onAsk: (question: string) => Promise<boolean>;
   disabled?: boolean;
   isLoading?: boolean;
 }
@@ -12,6 +12,7 @@ export default function QuestionInput({
   isLoading = false,
 }: QuestionInputProps) {
   const [question, setQuestion] = useState("");
+
   const [validationError, setValidationError] = useState<string | null>(null);
 
   const handleSubmit = async (event: React.SubmitEvent<HTMLFormElement>) => {
@@ -23,6 +24,7 @@ export default function QuestionInput({
 
     if (!trimmedQuestion) {
       setValidationError("Please enter a question.");
+
       return;
     }
 
@@ -30,18 +32,14 @@ export default function QuestionInput({
       return;
     }
 
-    try {
-      await onAsk(trimmedQuestion);
+    const success = await onAsk(trimmedQuestion);
 
-      // Clear the input only after the request
-      // succeeds.
+    if (success) {
       setQuestion("");
-    } catch {
-      // useQuery handles the API error.
     }
   };
 
-  const handleChange = (event: React.ChangeEvent<HTMLTextAreaElement>) => {
+  const handleChange = (event: ChangeEvent<HTMLTextAreaElement>) => {
     setQuestion(event.target.value);
 
     if (validationError) {
@@ -59,10 +57,10 @@ export default function QuestionInput({
         id="question"
         value={question}
         onChange={handleChange}
-        placeholder={"Ask something about your documents..."}
+        placeholder="Ask something about your documents..."
         rows={4}
-        disabled={isDisabled}
         maxLength={2000}
+        disabled={isDisabled}
       />
 
       <div>

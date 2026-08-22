@@ -1,49 +1,64 @@
-import { useQuery } from "../../hooks/useQuery";
+import { useEffect, useRef } from "react";
 
-import QuestionInput from "./QuestionInput";
+import type { ChatMessage } from "../../types/chat";
+
 import AnswerCard from "./AnswerCard";
 import CitationList from "./CitationList";
 
 interface ChatPanelProps {
-  hasDocuments: boolean;
+  messages: ChatMessage[];
 }
 
-export default function ChatPanel({ hasDocuments }: ChatPanelProps) {
-  const { response, isLoading, error, ask } = useQuery();
+export default function ChatPanel({ messages }: ChatPanelProps) {
+  const bottomRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({
+      behavior: "smooth",
+    });
+  }, [messages]);
+
+  if (messages.length === 0) {
+    return (
+      <section className="chat-panel" aria-label="Conversation">
+        <div>
+          <h2>Ask a question</h2>
+
+          <p>Upload your documents and ask questions about their content.</p>
+        </div>
+      </section>
+    );
+  }
 
   return (
-    <section>
-      <header>
-        <h2>Ask questions</h2>
+    <section className="chat-panel" aria-label="Conversation">
+      {messages.map((message) => {
+        if (message.role === "user") {
+          return (
+            <div key={message.id} className="chat-message user-message">
+              <div>
+                <span>You</span>
 
-        <p>Ask questions based on your uploaded documents.</p>
-      </header>
+                <p>{message.content}</p>
+              </div>
+            </div>
+          );
+        }
 
-      {!hasDocuments && (
-        <div>
-          <p>Upload at least one document before asking a question.</p>
-        </div>
-      )}
+        return (
+          <div key={message.id} className="chat-message assistant-message">
+            <span>Assistant</span>
 
-      <QuestionInput
-        onAsk={ask}
-        disabled={!hasDocuments}
-        isLoading={isLoading}
-      />
+            <AnswerCard answer={message.content} />
 
-      {error && (
-        <div role="alert">
-          <p>{error}</p>
-        </div>
-      )}
+            {message.sources && message.sources.length > 0 && (
+              <CitationList sources={message.sources} />
+            )}
+          </div>
+        );
+      })}
 
-      {response && (
-        <div>
-          <AnswerCard answer={response.answer} />
-
-          <CitationList sources={response.sources} />
-        </div>
-      )}
+      <div ref={bottomRef} />
     </section>
   );
 }

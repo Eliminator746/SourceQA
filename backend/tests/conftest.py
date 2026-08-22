@@ -236,3 +236,26 @@ def test_document(db_session):
     db_session.refresh(document)
 
     return document
+
+
+@pytest.fixture
+def ready_document(test_user):
+    """A Document row with status='ready' so the query endpoint's
+    ready_count guard passes without touching S3 or ChromaDB."""
+    db = _app_db.SessionLocal()
+    doc = Document(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        filename="test_ready.pdf",
+        file_type="pdf",
+        file_size=1024,
+        s3_key=f"documents/{test_user.id}/test_ready.pdf",
+        status="ready",
+    )
+    db.add(doc)
+    db.commit()
+    db.refresh(doc)
+    yield doc
+    db.delete(doc)
+    db.commit()
+    db.close()

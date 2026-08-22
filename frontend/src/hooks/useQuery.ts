@@ -1,61 +1,28 @@
 import { useState } from "react";
 
 import { askQuestion } from "../api/query";
+import type { QueryResponse } from "../types/query";
+import { getApiErrorMessage } from "../utils/apiError";
 
-import type { QueryRequest, QueryResponse } from "../types/query";
-
-interface UseQueryResult {
-  response: QueryResponse | null;
-
-  isLoading: boolean;
-
-  error: string | null;
-
-  ask: (question: string) => Promise<QueryResponse | null>;
-
-  clear: () => void;
-}
-
-export function useQuery(): UseQueryResult {
-  const [response, setResponse] = useState<QueryResponse | null>(null);
-
+export function useQuery() {
   const [isLoading, setIsLoading] = useState(false);
 
   const [error, setError] = useState<string | null>(null);
 
-  // --------------------------------------------------
-  // Ask question
-  // --------------------------------------------------
-
   const ask = async (question: string): Promise<QueryResponse | null> => {
-    const trimmedQuestion = question.trim();
-
-    if (!trimmedQuestion) {
-      setError("Question cannot be empty.");
-
-      return null;
-    }
+    setIsLoading(true);
+    setError(null);
 
     try {
-      setIsLoading(true);
+      const response = await askQuestion({
+        question,
+      });
 
-      setError(null);
-
-      const request: QueryRequest = {
-        question: trimmedQuestion,
-      };
-
-      const result = await askQuestion(request);
-
-      setResponse(result);
-
-      return result;
+      return response;
     } catch (error) {
-      console.error("Failed to process question:", error);
+      const message = getApiErrorMessage(error);
 
-      setResponse(null);
-
-      setError("Unable to get an answer. Please try again.");
+      setError(message);
 
       return null;
     } finally {
@@ -63,21 +30,14 @@ export function useQuery(): UseQueryResult {
     }
   };
 
-  // --------------------------------------------------
-  // Clear current answer
-  // --------------------------------------------------
-
-  const clear = () => {
-    setResponse(null);
-
+  const clearError = () => {
     setError(null);
   };
 
   return {
-    response,
+    ask,
     isLoading,
     error,
-    ask,
-    clear,
+    clearError,
   };
 }
