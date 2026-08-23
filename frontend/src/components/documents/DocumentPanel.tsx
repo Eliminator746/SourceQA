@@ -30,24 +30,32 @@ export default function DocumentPanel({
   const uploadLimitReached = count >= maxSources;
 
   return (
-    <aside>
-      <div>
-        <h2>Your Sources</h2>
-
-        <span>
+    <aside className="w-72 bg-white border-l border-gray-200 flex flex-col overflow-hidden shrink-0">
+      {/* Header */}
+      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 shrink-0">
+        <h2 className="text-sm font-semibold text-gray-900">Your Sources</h2>
+        <span className="text-xs bg-gray-100 text-gray-600 rounded-full px-2 py-0.5 font-medium">
           {count} / {maxSources}
         </span>
       </div>
 
-      <div>
-        {isLoading && <p>Loading documents...</p>}
+      {/* Document list */}
+      <div className="flex-1 overflow-y-auto p-3">
+        {isLoading && (
+          <p className="text-sm text-gray-400 text-center py-8">
+            Loading documents...
+          </p>
+        )}
 
         {!isLoading && documents.length === 0 && (
-          <p>No documents uploaded yet.</p>
+          <div className="flex flex-col items-center justify-center py-10 text-center">
+            <span className="text-3xl mb-3">📂</span>
+            <p className="text-sm text-gray-400">No documents uploaded yet.</p>
+          </div>
         )}
 
         {!isLoading && documents.length > 0 && (
-          <div>
+          <div className="space-y-1">
             {documents.map((document) => (
               <DocumentItem
                 key={document.id}
@@ -59,8 +67,16 @@ export default function DocumentPanel({
         )}
       </div>
 
-      <div>
-        {error && <p role="alert">{error}</p>}
+      {/* Footer */}
+      <div className="p-3 border-t border-gray-200 space-y-2 shrink-0">
+        {error && (
+          <p
+            role="alert"
+            className="text-xs text-red-500 bg-red-50 border border-red-200 rounded px-2 py-1"
+          >
+            {error}
+          </p>
+        )}
 
         <UploadDocument
           onUpload={onUpload}
@@ -69,9 +85,8 @@ export default function DocumentPanel({
         />
 
         {uploadLimitReached && (
-          <p>
-            Maximum of {maxSources} documents reached. Delete a document to add
-            another.
+          <p className="text-xs text-amber-600 text-center">
+            Maximum of {maxSources} documents reached.
           </p>
         )}
       </div>

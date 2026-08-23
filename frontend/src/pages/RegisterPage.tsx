@@ -2,14 +2,23 @@ import RegisterForm from "../components/RegisterForm";
 
 export default function RegisterPage() {
   return (
-    <main>
-      <section>
-        <h1>Create your account</h1>
-
-        <p>Create an account to securely manage your documents.</p>
-
-        <RegisterForm />
-      </section>
+    <main className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
+      <div className="w-full max-w-md">
+        <div className="text-center mb-8">
+          <div className="w-12 h-12 bg-indigo-600 rounded-xl flex items-center justify-center mx-auto mb-4">
+            <span className="text-white text-xl font-bold">R</span>
+          </div>
+          <h1 className="text-2xl font-bold text-gray-900">
+            Create your account
+          </h1>
+          <p className="text-sm text-gray-500 mt-1">
+            Create an account to securely manage your documents.
+          </p>
+        </div>
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8">
+          <RegisterForm />
+        </div>
+      </div>
     </main>
   );
 }

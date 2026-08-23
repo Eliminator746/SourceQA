@@ -19,4 +19,19 @@ apiClient.interceptors.request.use(
   },
 );
 
+// If the server rejects an active token, clear it and return to login.
+apiClient.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (
+      error.response?.status === 401 &&
+      localStorage.getItem("access_token")
+    ) {
+      localStorage.removeItem("access_token");
+      window.location.href = "/login";
+    }
+    return Promise.reject(error);
+  },
+);
+
 export default apiClient;

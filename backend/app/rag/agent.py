@@ -328,8 +328,12 @@ company", "why?", and "how does that compare?"
 
 Rules:
 
-1. Always use the search_documents tool for questions that
-   require information from the uploaded documents.
+1. Always call search_documents for EVERY question that
+   requires factual information from the uploaded documents,
+   including follow-up questions and clarifications about
+   previously discussed topics. Never use tool results from
+   previous conversation turns as current evidence — always
+   perform a fresh search.
 
 2. Never use your general knowledge to answer.
 

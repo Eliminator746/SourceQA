@@ -37,8 +37,6 @@ export default function LoginForm() {
         password,
       });
 
-      // If the user was redirected to login from
-      // a protected route, send them back there.
       const from = location.state?.from?.pathname;
 
       navigate(from || "/chat", {
@@ -56,10 +54,14 @@ export default function LoginForm() {
   };
 
   return (
-    <form onSubmit={handleSubmit}>
+    <form onSubmit={handleSubmit} className="space-y-5">
       <div>
-        <label htmlFor="email">Email</label>
-
+        <label
+          htmlFor="email"
+          className="block text-sm font-medium text-gray-700 mb-1"
+        >
+          Email
+        </label>
         <input
           id="email"
           type="email"
@@ -68,12 +70,17 @@ export default function LoginForm() {
           placeholder="Enter your email"
           autoComplete="email"
           disabled={isSubmitting}
+          className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent disabled:opacity-50 transition"
         />
       </div>
 
       <div>
-        <label htmlFor="password">Password</label>
-
+        <label
+          htmlFor="password"
+          className="block text-sm font-medium text-gray-700 mb-1"
+        >
+          Password
+        </label>
         <input
           id="password"
           type="password"
@@ -82,17 +89,35 @@ export default function LoginForm() {
           placeholder="Enter your password"
           autoComplete="current-password"
           disabled={isSubmitting}
+          className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent disabled:opacity-50 transition"
         />
       </div>
 
-      {error && <p role="alert">{error}</p>}
+      {error && (
+        <p
+          role="alert"
+          className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2"
+        >
+          {error}
+        </p>
+      )}
 
-      <button type="submit" disabled={isSubmitting}>
-        {isSubmitting ? "Logging in..." : "Login"}
+      <button
+        type="submit"
+        disabled={isSubmitting}
+        className="w-full py-2.5 rounded-lg bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed transition"
+      >
+        {isSubmitting ? "Logging in…" : "Login"}
       </button>
 
-      <p>
-        Don't have an account? <Link to="/register">Create an account</Link>
+      <p className="text-center text-sm text-gray-500">
+        Don't have an account?{" "}
+        <Link
+          to="/register"
+          className="text-indigo-600 hover:underline font-medium"
+        >
+          Create an account
+        </Link>
       </p>
     </form>
   );

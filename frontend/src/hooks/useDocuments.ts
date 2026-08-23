@@ -64,6 +64,18 @@ export function useDocuments(): UseDocumentsResult {
   }, [refreshDocuments]);
 
   // --------------------------------------------------
+  // Poll while any document is still being indexed
+  // --------------------------------------------------
+
+  useEffect(() => {
+    const hasProcessing = documents.some((doc) => doc.status === "processing");
+    if (!hasProcessing) return;
+
+    const interval = setInterval(refreshDocuments, 3000);
+    return () => clearInterval(interval);
+  }, [documents, refreshDocuments]);
+
+  // --------------------------------------------------
   // Upload document
   // --------------------------------------------------
 

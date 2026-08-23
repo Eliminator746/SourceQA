@@ -9,6 +9,9 @@ function createMessageId(): string {
 
 export function useConversation() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [conversationId, setConversationId] = useState<string | undefined>(
+    undefined,
+  );
 
   const addUserMessage = useCallback((content: string) => {
     const message: ChatMessage = {
@@ -28,15 +31,18 @@ export function useConversation() {
       sources: response.sources,
     };
 
+    setConversationId(response.conversation_id);
     setMessages((previous) => [...previous, message]);
   }, []);
 
   const clearConversation = useCallback(() => {
     setMessages([]);
+    setConversationId(undefined);
   }, []);
 
   return {
     messages,
+    conversationId,
     addUserMessage,
     addAssistantMessage,
     clearConversation,

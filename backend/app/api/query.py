@@ -116,8 +116,14 @@ def query_documents(
     # 5. Build citations
     # ========================================================
 
-    citations = build_citations(
-        result["retrieved_results"]
+    answer = result["answer"]
+
+    # Don't surface retrieved-but-rejected evidence when the
+    # LLM concluded the documents don't answer the question.
+    citations = (
+        []
+        if answer.strip() == NO_ANSWER
+        else build_citations(result["retrieved_results"])
     )
 
     # ========================================================
@@ -126,6 +132,6 @@ def query_documents(
 
     return {
         "conversation_id": str(conversation_id),
-        "answer": result["answer"],
+        "answer": answer,
         "sources": citations,
     }

@@ -9,13 +9,17 @@ export function useQuery() {
 
   const [error, setError] = useState<string | null>(null);
 
-  const ask = async (question: string): Promise<QueryResponse | null> => {
+  const ask = async (
+    question: string,
+    conversationId?: string,
+  ): Promise<QueryResponse | null> => {
     setIsLoading(true);
     setError(null);
 
     try {
       const response = await askQuestion({
         question,
+        conversation_id: conversationId,
       });
 
       return response;
