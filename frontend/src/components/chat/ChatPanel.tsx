@@ -6,16 +6,17 @@ import AnswerCard from "./AnswerCard";
 
 interface ChatPanelProps {
   messages: ChatMessage[];
+  isLoading?: boolean;
 }
 
-export default function ChatPanel({ messages }: ChatPanelProps) {
+export default function ChatPanel({ messages, isLoading = false }: ChatPanelProps) {
   const bottomRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+  }, [messages, isLoading]);
 
-  if (messages.length === 0) {
+  if (messages.length === 0 && !isLoading) {
     return (
       <section
         className="flex-1 flex items-center justify-center text-center px-6"
@@ -68,6 +69,46 @@ export default function ChatPanel({ messages }: ChatPanelProps) {
           </div>
         );
       })}
+
+      {isLoading && (
+        <div className="flex flex-col gap-2 max-w-[85%]">
+          <div className="flex items-center gap-2 mb-1">
+            <div className="w-6 h-6 bg-indigo-600 rounded-full flex items-center justify-center shrink-0">
+              <span className="text-white text-xs font-bold">R</span>
+            </div>
+            <span className="text-xs font-medium text-gray-500">
+              Assistant
+            </span>
+          </div>
+          <div
+            role="status"
+            aria-live="polite"
+            className="inline-flex w-fit items-center gap-2 bg-white rounded-2xl rounded-tl-sm px-4 py-3 shadow-sm border border-gray-100 text-sm text-gray-500"
+          >
+            <svg
+              className="animate-spin w-4 h-4 text-indigo-500"
+              fill="none"
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+            >
+              <circle
+                className="opacity-25"
+                cx="12"
+                cy="12"
+                r="10"
+                stroke="currentColor"
+                strokeWidth="4"
+              />
+              <path
+                className="opacity-75"
+                fill="currentColor"
+                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+              />
+            </svg>
+            Searching your documents…
+          </div>
+        </div>
+      )}
 
       <div ref={bottomRef} />
     </section>

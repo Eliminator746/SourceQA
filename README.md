@@ -1,667 +1,369 @@
 # RAG Q&A — Conversational Source-Grounded Document Assistant
 
-A full-stack **Conversational** Retrieval-Augmented Generation (RAG) application that allows users to upload up to **5 documents** and have a multi-turn conversation based exclusively on the information contained within those sources. Users can ask follow-up questions, and the assistant resolves references from earlier in the conversation (e.g. "What about its valuation?" or "How does that compare?") without requiring the user to repeat context.
+A full-stack **Conversational Retrieval-Augmented Generation (RAG)** application for asking questions over user-uploaded documents.
 
-It includes a login feature so users can access their documents and continue conversations anytime. When the 5-document limit is reached, users can delete an existing document and upload a new one.
+Users can upload up to **5 PDF, DOCX, or TXT files** and have multi-turn conversations grounded only in those sources. Follow-up questions such as **“What about its valuation?”** can use the previous conversation context without requiring the user to repeat the subject.
 
-The system supports **PDF, DOCX, and TXT** files, performs **hybrid retrieval using semantic and keyword search**, reranks the retrieved results through a CrossEncoder, and generates concise answers with **source citations** for transparency.
+The system combines **hybrid retrieval, Reciprocal Rank Fusion (RRF), CrossEncoder reranking, a deterministic Evidence Gate, LangGraph agent memory, and metadata-based citations**.
 
-If the requested information cannot be found in the user's uploaded sources, the application explicitly states that it does not have enough information to answer rather than relying on the model's general knowledge.
+> **Core rule:** if the uploaded documents do not contain sufficient evidence, the application does not answer from the model's general knowledge.
+
+---
+
+## Demo
+
+![RAG Q&A frontend](docs/images/rag-qna-ui.png)
+
+*Conversational document Q&A with inline citations and a document/source panel.*
 
 ---
 
 ## Features
 
-- 🔐 JWT-based user authentication
-- 📄 Upload PDF, DOCX, and TXT documents
-- 📚 Maximum of 5 active sources per user
-- ☁️ Private document storage using Amazon S3
+- 🔐 JWT-based authentication
+- 📄 PDF, DOCX, and TXT uploads
+- 📚 Maximum of 5 active documents per user
+- ☁️ Private Amazon S3 document storage
 - 🗄️ PostgreSQL database hosted on Neon
-- 💬 Multi-turn conversational Q&A with memory per session
-- 🧠 LangGraph agent with tool-calling loop and retry logic
-- 🔎 Hybrid retrieval using:
-  - Semantic vector search (ChromaDB + Gemini embeddings)
+- 💬 Multi-turn conversational Q&A
+- 🧠 LangGraph agent with tool-calling and retrieval retry logic
+- 💾 Conversation memory with LangGraph `InMemorySaver`
+- 🔎 Hybrid retrieval:
+  - ChromaDB semantic search
   - BM25 keyword search
   - Reciprocal Rank Fusion (RRF)
-- 🎯 Cross-encoder reranking (`ms-marco-MiniLM-L-6-v2`)
-- 🛡️ Evidence Gate — deterministic relevance threshold before answering
-- 🤖 Source-grounded LLM responses (Gemini 3.6 Flash)
-- 📑 Source/page citations with answers
+- 🎯 CrossEncoder reranking with `ms-marco-MiniLM-L-6-v2`
+- 🛡️ Deterministic Evidence Gate
+- 🤖 Gemini 3.6 Flash for grounded answer generation
+- 📑 Inline `[1] [2] [3]` source citations
 - 🔒 User-level document isolation
-- 🚫 Prevents answering from information outside the provided sources
-- ⚡ Token-efficient context construction
-- 🧹 Complete document deletion from S3, vector store, and database
-- 🖥️ React frontend with live document status and conversation history
-- 🚀 FastAPI backend
-- 🧪 Automated API testing with pytest
+- 🚫 Refuses unsupported questions instead of using general knowledge
+- 🧹 Document deletion across S3, ChromaDB, and PostgreSQL
+- 🧪 Automated integration testing with pytest
+- 📊 Offline LangSmith evaluation with LLM-as-judge metrics
 
 ---
 
-# Architecture
+## Architecture
 
 ```text
-                         ┌─────────────────────┐
-                         │       React UI      │
-                         │                     │
-                         │  Login              │
-                         │  Sources            │
-                         │  Conversation       │
-                         └──────────┬──────────┘
+                         ┌──────────────────────┐
+                         │      React UI        │
+                         │                      │
+                         │ Login                │
+                         │ Documents            │
+                         │ Conversation         │
+                         │ Inline Citations     │
+                         └──────────┬───────────┘
                                     │
-                         HTTP / JWT + conversation_id
+                             HTTP + JWT
+                         conversation_id
                                     │
                                     ▼
-                         ┌─────────────────────┐
-                         │      FastAPI        │
-                         │                     │
-                         │ Authentication      │
-                         │ Document APIs       │
-                         │ Query API           │
-                         └───────┬─────┬───────┘
-                                 │     │
-                    ┌────────────┘     └──────────────┐
-                    ▼                                 ▼
-             ┌─────────────┐                  ┌─────────────┐
-             │ PostgreSQL  │                  │  Amazon S3  │
-             │   Neon DB   │                  │             │
-             │             │                  │ PDF/DOCX/TXT│
-             │ Users       │                  │   files     │
-             │ Documents   │                  └─────────────┘
-             └─────────────┘
+                         ┌──────────────────────┐
+                         │       FastAPI        │
+                         │                      │
+                         │ Auth API             │
+                         │ Document API         │
+                         │ Query API            │
+                         └───────┬───────┬──────┘
+                                 │       │
+                   ┌─────────────┘       └──────────────┐
+                   ▼                                    ▼
+          ┌────────────────┐                   ┌────────────────┐
+          │  PostgreSQL    │                   │   Amazon S3    │
+          │    Neon DB     │                   │                │
+          │                │                   │ Original files │
+          │ Users          │                   │ PDF/DOCX/TXT   │
+          │ Documents      │                   └────────────────┘
+          │ Metadata       │
+          └────────────────┘
 
-                              ┌─────────────────────────────┐
-                              │    LangGraph Agent          │
-                              │                             │
-                              │  conversation_id            │
-                              │       ↓                     │
-                              │  InMemorySaver              │
-                              │  (thread memory)            │
-                              │       ↓                     │
-                              │  Gemini 3.6 Flash           │
-                              │  + search_documents tool    │
-                              └─────────────┬───────────────┘
-                                            │
-                                            ▼
-                              ┌─────────────────────────────┐
-                              │  search_documents tool      │
-                              │  (up to 3 attempts)         │
-                              └──────────────┬──────────────┘
-                                             │
-                              ┌──────────────┼──────────────┐
-                              ▼              ▼              │
-                   ┌──────────────┐  ┌──────────────┐      │
-                   │   ChromaDB   │  │     BM25     │      │
-                   │  Semantic    │  │   Keyword    │      │
-                   │  Search      │  │   Search     │      │
-                   └──────┬───────┘  └──────┬───────┘      │
-                          │                 │               │
-                          └────────┬────────┘               │
-                                   ▼                        │
-                          ┌──────────────────┐              │
-                          │  EnsembleRetriever│             │
-                          │  RRF Fusion       │             │
-                          │  (weights 0.5/0.5)│             │
-                          └────────┬─────────┘              │
-                                   │                        │
-                                   ▼                        │
-                          ┌──────────────────┐              │
-                          │  CrossEncoder    │              │
-                          │  Reranker        │              │
-                          │  (ms-marco-      │              │
-                          │   MiniLM-L-6-v2) │              │
-                          └────────┬─────────┘              │
-                                   │                        │
-                                   ▼                        │
-                          ┌──────────────────┐              │
-                          │  Evidence Gate   │              │
-                          │                  │              │
-                          │  score ≥ 0.30?   │              │
-                          └───┬──────────────┘              │
-                              │                             │
-                    ┌─────────┴─────────┐                  │
-                    ▼                   ▼                  │
-                  FAIL               PASS                  │
-                    │                   │                  │
-                    ▼                   ▼                  │
-               Retry ──────────────────────────────────────┘
-               (up to 3×)           Context
-                    │                   │
-                    ▼                   ▼
-               No Answer            Gemini LLM
+                         ┌──────────────────────────────┐
+                         │      LangGraph Agent         │
+                         │                              │
+                         │ Gemini 3.6 Flash             │
+                         │ + search_documents tool      │
+                         │ + InMemorySaver              │
+                         └──────────────┬───────────────┘
                                         │
                                         ▼
-                                  Answer + Citations
+                              Hybrid Retrieval
+                             ┌─────────┴─────────┐
+                             ▼                   ▼
+                        ChromaDB               BM25
+                       Semantic                 Keyword
+                        Search                  Search
+                             └─────────┬─────────┘
+                                       ▼
+                                   RRF Fusion
+                                       ▼
+                                 CrossEncoder
+                                   Reranker
+                                       ▼
+                                 Evidence Gate
+                                  /         \
+                               FAIL         PASS
+                                │             │
+                           Retry /       Accepted
+                           No Answer      Evidence
+                                             │
+                                             ▼
+                                      Gemini 3.6 Flash
+                                             │
+                                             ▼
+                                      Answer + Citations
 ```
 
-Document ingestion pipeline:
+---
+
+## Document Ingestion Pipeline
 
 ```text
 S3 Document
      ↓
-Document Loader (PDF/DOCX/TXT)
+Document Loader
+(PDF / DOCX / TXT)
      ↓
-Extracted LangChain Documents
+LangChain Documents
      ↓
 RecursiveCharacterTextSplitter
 (chunk_size=800, overlap=120)
      ↓
-Chunks with metadata
+Chunks + Metadata
 (document_id, user_id, filename, page, chunk_index)
      ↓
-     ├──────────────────────┐
-     ▼                      ▼
-Gemini Embeddings        BM25 Index
-(gemini-embedding-2)     (built at query time)
-     │
-     ▼
+Gemini Embeddings
+     ↓
 ChromaDB
 ```
 
----
-
-# How It Works
-
-## 1. Authentication
-
-Users create an account and authenticate using JWT.
-
-```text
-Register
-   ↓
-Password hashing (pwdlib)
-   ↓
-PostgreSQL
-```
-
-During login:
-
-```text
-Email + Password
-       ↓
-Verify password
-       ↓
-Generate JWT
-       ↓
-Client stores token in localStorage
-```
-
-The JWT is required for all protected document and query endpoints.
-
-Every request is associated with the authenticated user's ID, ensuring complete data isolation.
+For retrieval, BM25 is built over the authenticated user's chunks at query time.
 
 ---
 
-## 2. Document Upload
-
-Users can upload:
-
-- PDF
-- DOCX
-- TXT
-
-A user can have a maximum of **5 active documents**.
-
-The upload flow is:
+## Query and Retrieval Pipeline
 
 ```text
-User
- ↓
-FastAPI
- ↓
-Validate file size (≤ 10 MB)
- ↓
-Validate actual MIME type (python-magic)
- ↓
-Generate document UUID
- ↓
-Upload original file to private S3
- ↓
-Create PostgreSQL document record (status: processing)
- ↓
-Background ingestion task
- ↓
-PostgreSQL status updated (ready / failed)
-```
-
-S3 objects use a user-scoped structure:
-
-```text
-documents/{user_id}/{document_id}.{extension}
-```
-
-The frontend polls for document status every 3 seconds while any document is in `processing` state, and automatically unlocks the question input once at least one document reaches `ready`.
-
----
-
-## 3. Document Processing
-
-Once a document is uploaded, the ingestion pipeline extracts and indexes its content.
-
-```text
-S3 Document
-     ↓
-Document Loader (PDF → PyPDFLoader, DOCX → python-docx, TXT → decode)
-     ↓
-Extracted LangChain Documents
-     ↓
-RecursiveCharacterTextSplitter
-(chunk_size=800, overlap=120)
-     ↓
-Chunks with metadata
-```
-
-Each chunk carries:
-
-```json
-{
-  "document_id": "document-uuid",
-  "user_id": "user-uuid",
-  "filename": "Stock_Market_Performance_2024.pdf",
-  "file_type": "pdf",
-  "page": 2,
-  "chunk_index": 7
-}
-```
-
-For **PDF**, pages are preserved so citations can reference the exact page.
-For **DOCX**, paragraph index is stored.
-For **TXT**, the full text is treated as a single document.
-
-Chunks are stored in ChromaDB with deterministic IDs (`{document_id}_chunk_{chunk_index}`), which allows safe re-ingestion without duplication.
-
----
-
-## 4. Hybrid Retrieval
-
-At query time, the system retrieves candidate chunks using two independent methods:
-
-```text
-Question
-    │
-    ├──────────────────────────────────┐
-    ▼                                  ▼
-ChromaDB                            BM25Retriever
-Semantic Search                     Keyword Search
-(cosine similarity,                 (built from all user
- top 20)                             chunks, top 20)
-    │                                  │
-    └────────────────┬─────────────────┘
-                     ▼
-              EnsembleRetriever
-              RRF Fusion
-              (weights=[0.5, 0.5], c=60)
-                     │
-                     ▼
-              Unified ranked candidates
-```
-
-Semantic search captures conceptual relevance. BM25 captures exact keyword matches (product names, error codes, specific terms). RRF combines both rankings into a single ordered list without requiring score normalization.
-
----
-
-## 5. Cross-Encoder Reranking
-
-The top hybrid candidates are passed through a cross-encoder:
-
-```text
-Hybrid candidates (up to 40)
-         ↓
-CrossEncoder (ms-marco-MiniLM-L-6-v2)
-         ↓
-Score each (question, chunk) pair
-         ↓
-Sort by relevance score (descending)
-         ↓
-Top 5 reranked results
-```
-
-The cross-encoder reads the question and the chunk together, giving more precise relevance judgements than bi-encoder (vector) similarity alone.
-
----
-
-## 6. Evidence Gate
-
-Before the retrieved chunks reach the LLM, they pass through a deterministic relevance gate:
-
-```text
-Reranked results
-       ↓
-Best CrossEncoder score ≥ 0.30?
-       │
-   ┌───┴───┐
-   NO      YES
-   │        │
-   ▼        ▼
-Retry     Accept evidence
-(up to     ↓
- 3×)    Pass to LLM
-```
-
-The gate checks that at least one chunk has a relevance score at or above the threshold. If not, the search tool returns `NO_RELEVANT_INFORMATION` and the agent can reformulate and retry.
-
-This gate is intentionally **not** LLM-based — it is a fast deterministic check that prevents irrelevant chunks from reaching the model.
-
----
-
-## 7. Conversational Agent
-
-The core of the system is a LangGraph agent that handles multi-turn conversations.
-
-```text
-User question
-      ↓
-LangGraph Agent (Gemini 3.6 Flash)
-      │
-      │  Sees:
-      │  - Current question
-      │  - Full conversation history (via InMemorySaver)
+User Question
       │
       ▼
-search_documents tool
-      ↓
-Hybrid Retrieval → RRF → CrossEncoder → Evidence Gate
+LangGraph Agent
       │
-  ┌───┴────┐
-FAIL      PASS
-  │         │
-  ▼         ▼
-Retry    Context string
-(≤3×)       │
-  │         ▼
-  │    Gemini 3.6 Flash
-  │    (grounded answer)
-  │         │
-  ▼         ▼
-No Answer  Answer + metadata
-           for citation building
+      ▼
+search_documents()
+      │
+      ├───────────────┐
+      ▼               ▼
+   ChromaDB          BM25
+ Semantic Search   Keyword Search
+      └───────┬───────┘
+              ▼
+         RRF Fusion
+              ▼
+       CrossEncoder
+         Reranking
+              ▼
+       Top 5 Results
+              ▼
+        Evidence Gate
+         score ≥ 0.30
+           /     \
+        FAIL     PASS
+         │         │
+     retry ≤3      ▼
+               Accepted Evidence
+                     │
+                     ▼
+                  Gemini
+                     │
+                     ▼
+              Grounded Answer
+                     │
+                     ▼
+                Citations
 ```
 
-**Conversation memory** is handled by LangGraph's `InMemorySaver` checkpointer. Each conversation is identified by a `conversation_id` (UUID). All requests sharing the same `conversation_id` use the same conversation thread.
+### Hybrid retrieval
 
-This allows the agent to resolve follow-up references without an explicit query rewriter:
+- **Semantic search:** ChromaDB with Gemini embeddings
+- **Keyword search:** BM25
+- **Fusion:** LangChain `EnsembleRetriever` with RRF (`weights=[0.5, 0.5]`, `c=60`)
+- **Reranking:** `cross-encoder/ms-marco-MiniLM-L-6-v2`
+- **Final retrieval set:** top 5 reranked chunks
+
+### Evidence Gate
+
+The live Evidence Gate is deterministic:
 
 ```text
-Turn 1: "Which company had approximately a 36% stock increase in 2024?"
-Turn 2: "What was driving that growth?"       ← "that" resolved from history
-Turn 3: "How does it compare to its peers?"   ← "it" resolved from history
+Best CrossEncoder score >= 0.30
+        │
+   ┌────┴────┐
+   │         │
+  PASS      FAIL
+   │         │
+   ▼         ▼
+LLM       Retry retrieval
+          up to 3 attempts
 ```
 
-> **Note:** `InMemorySaver` stores history in process memory. Conversation history is lost if the server restarts.
-
-The `conversation_id` is returned with every query response. The frontend stores it and passes it with every subsequent question in the same session. Clearing the conversation in the UI discards the ID, starting a fresh thread.
+The gate is deliberately not an LLM call. It is a fast production-time relevance check. Offline quality evaluation is handled separately through LangSmith.
 
 ---
 
-## 8. Source-Grounded Answer Generation
+## Conversational RAG
 
-The accepted evidence chunks are formatted and passed to Gemini 3.6 Flash as context.
+Each conversation is identified by a UUID `conversation_id`.
 
-The agent's system prompt instructs the model to:
+The frontend sends the ID with follow-up questions:
 
-1. Use **only** the `search_documents` tool output as factual evidence.
-2. Never use general knowledge to answer.
-3. Use conversation history **only** to understand the current question, never as evidence.
-4. Retry up to 3 times if sufficient evidence is not found.
-5. Respond with exactly `"I don't have the answer based on the provided documents."` if evidence cannot be found after all attempts.
-6. Keep answers concise: maximum 6 sentences, preferably 2–4.
-7. Never expose internal scores, metadata, or implementation details.
+```text
+Turn 1
+"What was Apple's stock performance in 2024?"
+        ↓
+Agent
+        ↓
+Answer
+        ↓
+conversation_id = ABC
+
+Turn 2
+"What about its valuation?"
+        ↓
+same conversation_id = ABC
+        ↓
+InMemorySaver restores conversation history
+        ↓
+Agent resolves "its" from context
+        ↓
+Retrieval + Evidence Gate
+        ↓
+Grounded Answer
+```
+
+No explicit query-rewriter is used in the current architecture. The agent receives the current question together with the conversation history.
+
+> **Prototype limitation:** `InMemorySaver` stores state in process memory, so conversation history is lost when the backend restarts.
 
 ---
 
-## 9. Citation Building
+## Source Citations
 
-Citations are built from chunk metadata — **not** extracted from the LLM response.
+Citations are generated from **retrieved evidence metadata**, not from the generated answer.
 
 ```text
-Accepted evidence (document, score) pairs
-        ↓
-Extract: document_id, filename, page (normalized to 1-based), chunk_index
-        ↓
+Accepted Evidence
+      ↓
+document_id
+filename
+page
+chunk_index
+      ↓
 Deduplicate by (document_id, page)
-        ↓
-Max 3 citations
-        ↓
-Return to frontend
+      ↓
+Maximum 3 unique citations
+      ↓
+Frontend
 ```
 
-If multiple chunks from the same page are retrieved, only one citation for that page is returned.
-
----
-
-## 10. Handling Questions Outside the Sources
-
-If a user asks a question whose answer is not in any uploaded document:
+The UI displays compact inline references such as:
 
 ```text
-Agent calls search_documents
-        ↓
-Hybrid retrieval finds candidates
-        ↓
-Evidence Gate: best score < 0.30
-        ↓
-Returns NO_RELEVANT_INFORMATION
-        ↓
-Agent reformulates and retries (up to 3×)
-        ↓
-Still no evidence found
-        ↓
-"I don't have the answer based on the provided documents."
+Apple's stock increased approximately 36% in 2024.[1]
 ```
 
-The system does not fall back to the LLM's general knowledge.
+This keeps source attribution deterministic and separate from LLM generation.
 
 ---
 
-## 11. User Data Isolation
-
-Each document belongs to a specific user.
+## Document Lifecycle
 
 ```text
-User A
- ├── document A
- ├── document B
- └── document C
-
-User B
- ├── document X
- └── document Y
+Upload
+  ↓
+Validate file type + size
+  ↓
+Generate document UUID
+  ↓
+Store original in private S3
+  ↓
+Create PostgreSQL record
+(status = processing)
+  ↓
+Background ingestion
+  ↓
+Extract → Chunk → Embed → ChromaDB
+  ↓
+status = ready
 ```
 
-Isolation is enforced at every layer:
+Supported states:
 
-- **PostgreSQL** — queries filter by `user_id`
-- **S3** — objects are stored under `documents/{user_id}/`
-- **ChromaDB** — semantic retrieval uses `filter: { "user_id": user_id }`
-- **BM25** — built from only the authenticated user's chunks
+| Status | Meaning |
+|---|---|
+| `processing` | Document is being indexed |
+| `ready` | Document is available for querying |
+| `failed` | Ingestion failed |
 
----
-
-# API Endpoints
-
-## Authentication
-
-### Register
-
-```http
-POST /api/auth/register
-```
-
-Request:
-
-```json
-{
-  "email": "user@example.com",
-  "password": "password123"
-}
-```
-
-Response (`201 Created`):
-
-```json
-{
-  "id": "uuid",
-  "email": "user@example.com",
-  "created_at": "2026-08-11T10:00:00Z"
-}
-```
-
----
-
-### Login
-
-```http
-POST /api/auth/login
-```
-
-Request:
-
-```json
-{
-  "email": "user@example.com",
-  "password": "password123"
-}
-```
-
-Response:
-
-```json
-{
-  "access_token": "jwt-token",
-  "token_type": "bearer"
-}
-```
-
----
-
-### Current User
-
-```http
-GET /api/auth/me
-```
-
-Header:
-
-```http
-Authorization: Bearer <JWT>
-```
-
----
-
-# Document APIs
-
-### Upload Document
-
-```http
-POST /api/documents
-```
-
-Content type:
-
-```text
-multipart/form-data
-```
-
-Form field:
-
-```text
-file
-```
-
-Supported formats:
-
-```text
-PDF · DOCX · TXT
-```
-
-Maximum active documents per user:
-
-```text
-5
-```
-
-Response (`201 Created`):
-
-```json
-{
-  "message": "Document uploaded and is being indexed",
-  "document_id": "uuid",
-  "filename": "report.pdf",
-  "status": "processing"
-}
-```
-
----
-
-### List Documents
-
-```http
-GET /api/documents
-```
-
-Returns the authenticated user's uploaded sources.
-
-Response:
-
-```json
-{
-  "documents": [
-    {
-      "id": "uuid",
-      "filename": "report.pdf",
-      "file_type": "pdf",
-      "file_size": 204800,
-      "status": "ready",
-      "created_at": "2026-08-11T10:00:00Z"
-    }
-  ],
-  "count": 1,
-  "max_sources": 5
-}
-```
-
-Document `status` values:
-
-| Value        | Meaning                           |
-| ------------ | --------------------------------- |
-| `processing` | Background ingestion is running   |
-| `ready`      | Indexed and available for queries |
-| `failed`     | Ingestion failed                  |
-
----
-
-### Get Document
-
-```http
-GET /api/documents/{document_id}
-```
-
-The endpoint verifies that the requested document belongs to the authenticated user.
-
----
-
-### Delete Document
-
-```http
-DELETE /api/documents/{document_id}
-```
+A user can have at most **5 active documents**.
 
 Deletion removes the document from:
 
 ```text
-S3 → ChromaDB (vector chunks) → PostgreSQL
+S3 → ChromaDB → PostgreSQL
 ```
 
 ---
 
-# Query API
+## User Data Isolation
 
-### Ask a Question
+Isolation is enforced at each storage/retrieval layer:
+
+```text
+PostgreSQL
+  → document ownership filtered by user_id
+
+S3
+  → documents/{user_id}/{document_id}.{extension}
+
+ChromaDB
+  → metadata filter: user_id
+
+BM25
+  → built only from the authenticated user's chunks
+```
+
+This prevents one user from retrieving another user's document content.
+
+---
+
+## API
+
+### Authentication
+
+```http
+POST /api/auth/register
+POST /api/auth/login
+GET  /api/auth/me
+```
+
+### Documents
+
+```http
+POST   /api/documents
+GET    /api/documents
+GET    /api/documents/{document_id}
+DELETE /api/documents/{document_id}
+```
+
+### Query
 
 ```http
 POST /api/query
 ```
 
-**New conversation** (omit `conversation_id`):
+New conversation:
 
 ```json
 {
@@ -669,7 +371,7 @@ POST /api/query
 }
 ```
 
-**Continuing a conversation** (include `conversation_id` from the previous response):
+Continue conversation:
 
 ```json
 {
@@ -683,7 +385,7 @@ Response:
 ```json
 {
   "conversation_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
-  "answer": "According to the document Stock_Market_Performance_2024.pdf, both Apple and Alphabet had stock price increases of approximately 36% in 2024.",
+  "answer": "…",
   "sources": [
     {
       "document_id": "uuid",
@@ -695,84 +397,58 @@ Response:
 }
 ```
 
-The `conversation_id` in the response must be passed back with subsequent questions to maintain conversation context. Omitting it starts a new conversation thread.
+---
+
+## Evaluation
+
+The project includes an offline LangSmith evaluation workflow with a small representative dataset.
+
+The evaluation set covers:
+
+- Answerable questions
+- Unanswerable questions
+- Multi-hop questions
+- Paraphrased questions
+- Citation-sensitive questions
+
+Configured LLM-as-judge evaluators include:
+
+- Retrieval relevance
+- Groundedness
+- Answer relevance
+- Correctness
+
+Because uploaded documents are user-defined, the evaluation dataset is used as a **representative regression suite**, not as a universal accuracy benchmark.
 
 ---
 
-# Database Design
+## Testing
 
-PostgreSQL stores application metadata only. Document content and vectors are stored separately.
+The backend includes unit/integration coverage for:
 
-## Users
+- Document ingestion
+- Document upload
+- S3 → RAG ingestion
+- RAG retrieval
+- Query behavior
+- Evidence Gate
+- Evidence rejection
+- Evidence deduplication
+- Citation deduplication
+- Query → citation integration
+- Conversational request routing
 
-```text
-users
-├── id             UUID
-├── email          unique
-├── password_hash
-├── created_at
-└── updated_at
+Run the suite:
+
+```bash
+pytest -v tests/integration
 ```
 
-## Documents
-
-```text
-documents
-├── id             UUID
-├── user_id        FK → users.id
-├── filename
-├── file_type      pdf | docx | txt
-├── file_size      bytes
-├── s3_key
-├── status         processing | ready | failed
-├── error_message  populated on failure
-├── created_at
-└── updated_at
-```
-
-Relationship:
-
-```text
-users
-  │
-  │ 1:N
-  ▼
-documents
-```
+The current integration baseline is **23 passing tests**.
 
 ---
 
-# Storage Architecture
-
-## PostgreSQL
-
-Used for:
-
-- users and authentication metadata
-- document ownership and metadata
-- document processing status
-
-## Amazon S3
-
-Used for original uploaded files (PDF, DOCX, TXT). The bucket is private.
-
-## ChromaDB
-
-Used for:
-
-- document chunk text
-- Gemini embedding vectors
-- retrieval metadata (document_id, user_id, filename, page, chunk_index)
-
-## Conversation Memory
-
-LangGraph `InMemorySaver` stores conversation history per `thread_id` (= `conversation_id`).
-
-> This is process-level memory. History is lost on server restart.
-
----
-
-# Project Structure
+## Project Structure
 
 ```text
 backend/
@@ -793,29 +469,13 @@ backend/
 │   │   ├── auth.py
 │   │   ├── document.py
 │   │   └── query.py
-│   ├── services/
-│   │   ├── s3_service.py
-│   │   ├── rag_ingestion.py
-│   │   └── auth_service.py
 │   └── rag/
-│       ├── agent.py          ← LangGraph conversational agent
-│       ├── retrieval.py      ← Hybrid search + CrossEncoder reranker
-│       ├── ingestion.py      ← Chunking + ChromaDB
-│       ├── loaders.py        ← PDF / DOCX / TXT loaders
-│       ├── citations.py      ← Citation builder
-│       └── evidence.py       ← Evidence Gate
-├── tests/
-│   ├── conftest.py
-│   ├── test_auth.py
-│   ├── test_documents.py
-│   ├── test_query.py
-│   ├── test_citations.py
-│   ├── test_evidence.py
-│   └── integration/
-│       ├── test_document_ingestion.py
-│       ├── test_document_upload.py
-│       ├── test_rag_query.py
-│       └── test_s3_rag_ingestion.py
+│       ├── agent.py
+│       ├── retrieval.py
+│       ├── ingestion.py
+│       ├── loaders.py
+│       ├── citations.py
+│       └── evidence.py
 ├── evaluation/
 │   ├── config.py
 │   ├── dataset.py
@@ -823,101 +483,97 @@ backend/
 │   ├── judge.py
 │   ├── run_evaluation.py
 │   └── target.py
+├── tests/
+│   ├── conftest.py
+│   └── integration/
 └── requirements.txt
 
 frontend/
-├── src/
-│   ├── App.tsx
-│   ├── api/
-│   │   ├── client.ts         ← Axios + JWT interceptor
-│   │   ├── auth.ts
-│   │   ├── documents.ts
-│   │   └── query.ts
-│   ├── context/
-│   │   └── AuthContext.tsx
-│   ├── hooks/
-│   │   ├── useAuth.ts
-│   │   ├── useConversation.ts ← Tracks conversation_id + message history
-│   │   ├── useDocuments.ts    ← Polls status while processing
-│   │   └── useQuery.ts
-│   ├── components/
-│   │   ├── LoginForm.tsx
-│   │   ├── RegisterForm.tsx
-│   │   ├── chat/
-│   │   │   ├── ChatPanel.tsx
-│   │   │   ├── AnswerCard.tsx
-│   │   │   ├── CitationList.tsx
-│   │   │   └── QuestionInput.tsx
-│   │   └── documents/
-│   │       ├── DocumentPanel.tsx
-│   │       ├── DocumentItem.tsx  ← Shows indexing status
-│   │       └── UploadDocument.tsx
-│   ├── pages/
-│   │   ├── ChatPage.tsx
-│   │   ├── LoginPage.tsx
-│   │   └── RegisterPage.tsx
-│   ├── routes/
-│   │   └── ProtectedRoute.tsx
-│   └── types/
-│       ├── auth.ts
-│       ├── chat.ts
-│       ├── document.ts
-│       └── query.ts           ← Includes conversation_id in request/response
-└── package.json
+└── src/
+    ├── api/
+    │   ├── client.ts
+    │   ├── auth.ts
+    │   ├── documents.ts
+    │   └── query.ts
+    ├── context/
+    │   └── AuthContext.tsx
+    ├── hooks/
+    │   ├── useAuth.ts
+    │   ├── useConversation.ts
+    │   ├── useDocuments.ts
+    │   └── useQuery.ts
+    ├── components/
+    │   ├── LoginForm.tsx
+    │   ├── RegisterForm.tsx
+    │   ├── chat/
+    │   │   ├── ChatPanel.tsx
+    │   │   ├── AnswerCard.tsx
+    │   │   ├── CitationList.tsx
+    │   │   └── QuestionInput.tsx
+    │   └── documents/
+    │       ├── DocumentPanel.tsx
+    │       ├── DocumentItem.tsx
+    │       └── UploadDocument.tsx
+    ├── pages/
+    │   ├── ChatPage.tsx
+    │   ├── LoginPage.tsx
+    │   └── RegisterPage.tsx
+    ├── routes/
+    │   └── ProtectedRoute.tsx
+    └── types/
 ```
 
 ---
 
-# Technology Stack
+## Technology Stack
 
 ### Backend
 
 - Python
 - FastAPI
 - SQLAlchemy
+- PostgreSQL / Neon
 
 ### Authentication
 
-- JWT (python-jose / PyJWT)
-- pwdlib (password hashing)
+- JWT
+- `pwdlib`
 
-### Database
-
-- PostgreSQL (Neon)
-
-### Object Storage
+### Storage
 
 - Amazon S3
 
-### RAG & Conversation
+### RAG
 
 - LangChain
-- LangGraph (conversational agent + InMemorySaver)
-- Gemini 3.6 Flash (LLM)
-- gemini-embedding-2 (embeddings)
-- ChromaDB (vector store)
-- BM25 (keyword retrieval)
-- LangChain EnsembleRetriever + RRF
-- CrossEncoder `ms-marco-MiniLM-L-6-v2` (reranking)
-- Deterministic Evidence Gate (relevance threshold)
+- LangGraph
+- ChromaDB
+- Gemini 3.6 Flash
+- Gemini Embeddings
+- BM25
+- LangChain `EnsembleRetriever`
+- RRF
+- Sentence Transformers CrossEncoder
 
 ### Frontend
 
-- React 19 + TypeScript
+- React 19
+- TypeScript
 - Vite
 - Axios
 - React Router
 
-### Testing
+### Evaluation & Testing
 
+- LangSmith
 - pytest
 - FastAPI TestClient
 
 ---
 
-# Environment Variables
+## Environment Variables
 
-Create a `.env` file:
+Create `backend/.env`:
 
 ```env
 APP_NAME=RAG Q&A Application
@@ -941,29 +597,23 @@ Never commit `.env` or cloud credentials to version control.
 
 ---
 
-# Installation
+## Running Locally
 
-Clone the repository and enter the backend directory:
+### Backend
 
 ```bash
 cd backend
-```
 
-Create a virtual environment:
-
-```bash
 python -m venv venv
 ```
 
-Activate it.
-
-### Windows
+Windows:
 
 ```bash
 venv\Scripts\activate
 ```
 
-### Linux/macOS
+Linux/macOS:
 
 ```bash
 source venv/bin/activate
@@ -975,172 +625,83 @@ Install dependencies:
 pip install -r requirements.txt
 ```
 
----
-
-# Run the Backend
-
-From the `backend` directory:
+Start the API:
 
 ```bash
 uvicorn app.main:app --reload
 ```
 
-The API will be available at:
+API:
 
 ```text
 http://127.0.0.1:8000
 ```
 
-Swagger documentation:
+Swagger:
 
 ```text
 http://127.0.0.1:8000/docs
 ```
 
----
-
-# Running Tests
-
-Run the complete test suite:
+### Frontend
 
 ```bash
-python -m pytest -v
-```
-
-Run authentication tests:
-
-```bash
-python -m pytest tests/test_auth.py -v
-```
-
-Run document tests:
-
-```bash
-python -m pytest tests/test_documents.py -v
-```
-
-Run query tests:
-
-```bash
-python -m pytest tests/test_query.py -v
+cd frontend
+npm install
+npm run dev
 ```
 
 ---
 
-# Design Principles
+## Design Principles
 
-## Source Grounding
+### Source grounding
+Answers should be supported by retrieved document evidence.
 
-The model should answer from retrieved source material rather than relying on unsupported knowledge.
-
-## User Isolation
-
+### User isolation
 Every retrieval operation is scoped to the authenticated user.
 
-## Minimal Context
+### Minimal context
+Only the top reranked evidence is passed to the LLM.
 
-Only highly relevant, reranked chunks are sent to the LLM to reduce unnecessary token consumption.
+### Deterministic citations
+Citations are built from evidence metadata rather than generated by the model.
 
-## Transparent Answers
-
-Answers contain references to the documents used to generate them.
-
-## Simple Architecture
-
-The application avoids unnecessary infrastructure and abstractions while maintaining clear separation between:
+### Clear separation of concerns
 
 ```text
-API
-Database
-Storage
-RAG
+React
+  ↓
+FastAPI
+  ↓
+Storage / Database
+  ↓
+RAG Retrieval
+  ↓
+Evidence Gate
+  ↓
 LLM
-Frontend
+  ↓
+Citations
 ```
 
 ---
 
-# End-to-End Flow
+## Known Limitations / Next Improvements
 
-```text
-                    USER
-                      │
-                      ▼
-                 React Frontend
-                 (Conversation UI)
-                      │
-                      ▼
-                 JWT Login
-                      │
-                      ▼
-                   FastAPI
-                      │
-          ┌───────────┴───────────┐
-          │                       │
-          ▼                       ▼
-      Documents               Query
-          │                  question +
-          ▼                  conversation_id
-         S3                       │
-          │                       ▼
-          ▼               LangGraph Agent
-    Text Extraction       (Gemini 3.6 Flash)
-          │                       │
-          ▼               search_documents
-       Chunking           tool (≤3 retries)
-          │                       │
-          ▼                       ▼
-      Gemini            Hybrid Search (Chroma + BM25)
-      Embeddings                  │
-          │                       ▼
-          ▼                     RRF Fusion
-       ChromaDB                   │
-                                  ▼
-                             CrossEncoder
-                                  │
-                                  ▼
-                            Evidence Gate
-                                  │
-                    ┌─────────────┴──────────────┐
-                    ▼                            ▼
-               No evidence                  Evidence
-               → retry / no answer          accepted
-                                                │
-                                                ▼
-                                           Gemini LLM
-                                           (grounded)
-                                                │
-                                                ▼
-                                    Answer + conversation_id
-                                    + Citations (from metadata)
-                                                │
-                                                ▼
-                              React UI (stored conversation_id
-                              sent with next question)
-```
-
----
-
-# Future Improvements
-
-- Persistent conversation history (database-backed, survives server restart)
-- Streaming LLM responses
-- Document preview / page viewer
-- Query and retrieval evaluation dashboard
-- Hybrid retrieval tuning (weight adjustment per query type)
-- Advanced metadata filtering (by document, date range, file type)
-- Usage and token analytics
-- Rate limiting
-- Observability and tracing (LangSmith)
-- Production-grade async document ingestion queue
-- Automated RAG evaluation datasets
+- Real token streaming is planned; the current UI returns the complete answer before rendering it.
+- `InMemorySaver` loses conversation history after a backend restart.
+- No document preview/page viewer yet.
+- Retrieval weights and thresholds can be tuned further.
+- Persistent conversation storage can be added for a production deployment.
+- Rate limiting and usage/token analytics can be added later.
 
 ---
 
 ## Summary
 
-**RAG Q&A** allows users to upload their own knowledge sources and have a **multi-turn conversation** with them, maintaining strict source grounding and user-level data isolation.
+**RAG Q&A** combines document ingestion, hybrid retrieval, reranking, deterministic evidence validation, conversational memory, and metadata-based citations into a single source-grounded assistant.
 
-The system is designed to provide:
+The goal is simple:
 
-> **Relevant answers from a conversational agent, minimal context, transparent citations, and no unsupported answers.**
+> **Retrieve the right evidence, answer only from that evidence, preserve conversational context, and show the user exactly where the answer came from.**

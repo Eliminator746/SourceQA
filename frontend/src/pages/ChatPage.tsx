@@ -70,7 +70,19 @@ export default function ChatPage() {
           </div>
         </div>
 
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => {
+              clearConversation();
+              clearError();
+            }}
+            disabled={queryLoading}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 hover:border-indigo-200 hover:text-indigo-600 hover:bg-indigo-50 disabled:opacity-50 disabled:cursor-not-allowed transition"
+          >
+            <span className="text-sm leading-none">+</span>
+            New Chat
+          </button>
           <span className="text-sm text-gray-600 hidden sm:block">
             {user?.email}
           </span>
@@ -88,7 +100,7 @@ export default function ChatPage() {
       <main className="flex flex-1 overflow-hidden">
         {/* Chat area */}
         <section className="flex flex-col flex-1 overflow-hidden">
-          <ChatPanel messages={messages} />
+          <ChatPanel messages={messages} isLoading={queryLoading} />
 
           {queryError && (
             <div
@@ -115,17 +127,7 @@ export default function ChatPage() {
             isLoading={queryLoading}
           />
 
-          {messages.length > 0 && (
-            <div className="px-4 pb-2 shrink-0 text-center">
-              <button
-                type="button"
-                onClick={clearConversation}
-                className="text-xs text-gray-400 hover:text-red-500 transition"
-              >
-                Clear conversation
-              </button>
-            </div>
-          )}
+
         </section>
 
         {/* Document panel */}
