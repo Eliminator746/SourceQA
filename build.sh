@@ -1,16 +1,13 @@
 #!/usr/bin/env bash
 set -o errexit
 
-# 1. System dependency required by python-magic
+# Install system dependency required by python-magic
 apt-get update && apt-get install -y libmagic1
 
-# 2. Backend/Python dependencies
+# Backend dependencies
 pip install -r requirements.txt
 
-# 3. Frontend environment variables
-cp /etc/secrets/.env.production frontend/.env.production
-
-# 4. Build React frontend
+# Frontend dependencies and production build
 cd frontend
 npm install
 npm run build
