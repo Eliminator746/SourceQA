@@ -1,6 +1,6 @@
 import { useCallback, useState } from "react";
 
-import type { AssistantMessageStatus, ChatMessage } from "../types/chat";
+import type { ChatMessage } from "../types/chat";
 
 import type { QueryResponse, Source } from "../types/query";
 
